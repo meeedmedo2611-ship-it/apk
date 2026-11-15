@@ -43,6 +43,8 @@ td small{display:block;color:var(--mut);font-size:11px}
 .tabs button{font-size:13px;padding:9px 2px}
 .dl{display:flex;gap:8px;padding:12px 12px 0}.dl button{flex:1;font:inherit;font-weight:600;padding:10px;border:0;border-radius:9px;background:var(--ac);color:var(--bg);cursor:pointer}
 .rep h2{font-size:16px;margin:14px 12px 6px}.rep p,.rep ul{margin:4px 12px}.rep ul{padding-inline-start:20px}
+.tabs{flex-wrap:wrap}.tabs button{flex:1 1 30%}
+.fi{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--line)}.fi .fn{flex:1;min-width:120px;font-size:13px;overflow:hidden;text-overflow:ellipsis}.fi small{width:100%;font-size:12px}.fi button{border:0;background:none;color:var(--bad);font-size:16px;cursor:pointer;padding:4px 8px}.fi input,.fi select{font-size:13px;padding:5px}
 </style>
 </head>
 <body>
@@ -51,9 +53,9 @@ td small{display:block;color:var(--mut);font-size:11px}
 <p class="sub">ارفع ملف الإكسل الشهري، والتحليل يتحدّث فوراً عند تغيير الإعدادات.</p>
 
 <div class="card">
-  <label class="up"><input type="file" id="file" accept=".xlsx,.xlsm,.xls"><span id="upt">اختر ملف الفترة الحالية</span></label>
-  <label class="up" style="margin-top:8px;border-style:solid;opacity:.85"><input type="file" id="file2" accept=".xlsx,.xlsm,.xls"><span id="upt2">+ ملف للمقارنة (اختياري، فترة سابقة)</span></label>
-  <p id="msg" class="hint">المطلوب: ورقة فيها الأعمدة: التاريخ، الدائرة، الفرع، افتتاح رسمي، اغلاق رسمي، افتتاح فعلي، اغلاق فعلي (مثل ورقة «البيانات»).</p>
+  <label class="up"><input type="file" id="file" multiple accept=".xlsx,.xlsm,.xls"><span id="upt">ارفع تقارير الأيام (عدة ملفات) أو ملف الشهر الجاهز</span></label>
+  <label class="up" style="margin-top:8px;border-style:solid;opacity:.85"><input type="file" id="file2" multiple accept=".xlsx,.xlsm,.xls"><span id="upt2">+ ملفات للمقارنة (اختياري، فترة سابقة)</span></label>
+  <div id="fl"></div><div id="unm"></div><p id="msg" class="hint">ارفع تقارير الأيام (إكسل: الدائرة، الفرع، افتتاح، اغلاق، ملاحظات) دفعة وحدة، أو ملف الشهر الجاهز. التاريخ بيُقرأ من اسم الملف وبتقدر تعدّله. الأوقات الرسمية من تاب «الأوقات الرسمية». ملفات PDF غير مدعومة بعد.</p>
 </div>
 
 <div class="card set">
@@ -70,12 +72,13 @@ td small{display:block;color:var(--mut);font-size:11px}
     <input id="q" type="search" placeholder="بحث باسم الفرع">
   </div>
   <div class="tabs" id="tabs">
-    <button class="on" data-t="b">الفروع</button><button data-t="d">الأيام</button><button data-t="v">المخالفات</button><button data-t="c" id="tcb" hidden>مقارنة</button><button data-t="r">تقرير الإدارة</button>
+    <button class="on" data-t="b">الفروع</button><button data-t="d">الأيام</button><button data-t="v">المخالفات</button><button data-t="c" id="tcb" hidden>مقارنة</button><button data-t="r">تقرير الإدارة</button><button data-t="s">الأوقات الرسمية</button>
   </div>
   <div class="tw" id="t-b"></div>
   <div class="tw" id="t-d" hidden></div>
   <div class="tw" id="t-v" hidden></div>
   <div class="tw" id="t-c" hidden></div>
+  <div class="tw" id="t-s" hidden></div>
   <div class="tw rep" id="t-r" hidden><div class="dl" id="dlb" hidden><button id="bx">تحميل Excel</button><button id="bh">تحميل التقرير</button></div><div id="rep"></div></div>
 </div>
 </main>
@@ -90,35 +93,117 @@ const fp=x=>x==null?'—':(Math.round(x*1000)/10)+'%';
 const cl=x=>x==null?'':x>=.95?'ok':x>=.85?'warn':'bad';
 function msg(t,e){const m=$('#msg');m.textContent=t;m.className=e?'err':'hint'}
 
-['file','file2'].forEach(id=>$('#'+id).addEventListener('change',e=>{
-  const f=e.target.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=ev=>{try{parse(XLSX.read(ev.target.result,{type:'array'}),f.name,id==='file2'?'B':'A')}catch(err){msg('تعذّر قراءة الملف: '+err.message,1)}};
-  r.readAsArrayBuffer(f);
-}));
-
-function parse(wb,name,slot){
-  const names=wb.SheetNames.slice().sort((a,b)=>(b==='البيانات')-(a==='البيانات'));
-  for(const n of names){
-    const a=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:null});
-    const hi=a.findIndex(r=>r&&r.some(c=>String(c).trim()==='الفرع')&&r.some(c=>String(c).trim()==='افتتاح فعلي'));
-    if(hi<0) continue;
-    const h=a[hi].map(c=>String(c==null?'':c).trim()), ix=k=>h.indexOf(k);
-    const C={d:ix('التاريخ'),c:ix('الدائرة'),b:ix('الفرع'),oo:ix('افتتاح رسمي'),oc:ix('اغلاق رسمي'),ao:ix('افتتاح فعلي'),ac:ix('اغلاق فعلي')};
-    if(C.d<0||C.oo<0||C.oc<0||C.ao<0||C.ac<0){continue}
-    const rs=a.slice(hi+1).filter(r=>r&&r[C.b]&&typeof r[C.d]==='number').map(r=>({
-      d:r[C.d],c:C.c>=0?String(r[C.c]||'').trim():'',b:String(r[C.b]).trim(),
-      oo:r[C.oo],oc:r[C.oc],ao:r[C.ao],ac:r[C.ac]}));
-    if(!rs.length) continue;
-    if(slot==='B'){ds.B={name:name.replace(/\.[^.]+$/,''),rows:rs};$('#upt2').textContent=name;msg('تم تحميل ملف المقارنة ('+rs.length+' سجل)');if(raw.length)render();return}
-    raw=rs;const cs=[...new Set(raw.map(r=>r.c).filter(Boolean))];
-    $('#circ').innerHTML='<option value="">كل الدوائر</option>'+cs.map(c=>`<option>${esc(c)}</option>`).join('');
-    $('#upt').textContent=name;
-    msg(`تم تحميل ${raw.length} سجل من ورقة «${n}»`);
-    $('#res').hidden=false; render(); return;
-  }
-  msg('ما لقيت جدول بالأعمدة المطلوبة (التاريخ، الفرع، افتتاح/اغلاق رسمي وفعلي).',1);
+const nm=s=>String(s||'').replace(/[\u064B-\u065F\u0640]/g,'').replace(/[أإآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[\s.\-+]/g,'').replace(/^ال/,'');
+const DEF=[["حلب","الموغامبو","10:00","23:00"],["حلب","الفرقان","10:00","23:00"],["حلب","ستي ستار","09:00","00:00"],["اللاذقية","الاميركان","10:00","23:00"],["اللاذقية","المول","10:00","22:00"],["اللاذقية","المهندسين","10:00","22:00"],["اللاذقية","الجامعة","09:00","23:00"],["اللاذقية","الأوقاف","09:00","23:00"],["جبلة + الجبل","العمارة","10:00","21:30"],["جبلة + الجبل","البريد","10:00","21:30"],["جبلة + الجبل","مشتى الحلو","10:00","21:00"],["جبلة + الجبل","مرمريتا","10:00","21:00"],["صافيتا","الكورنيش","09:00","22:00"],["صافيتا","السرايا","09:00","21:00"],["طرطوس","هنانو","09:00","22:00"],["طرطوس","مشبكة","09:00","22:00"],["طرطوس","جمعية","09:00","22:00"],["حمص","انشاءات","09:00","23:00"],["حمص","المحطة","08:00","00:00"],["حمص","الحواش","09:00","23:00"],["إدلب","ادلب الغيدق","12:00","23:00"],["حماه","محرده","08:00","22:00"],["حماه","حماه","08:00","00:00"],["دمشق","جرمانا","10:00","22:00"],["دمشق","قدسيا","10:00","22:00"],["دمشق","صحنايا","10:00","22:00"],["دمشق","النبك","10:00","22:00"],["دمشق","أبو رمانة","10:00","22:00"],["دمشق","المالكي","11:00","22:00"],["دمشق","مزة","10:00","23:00"],["دمشق","قصاع","10:00","22:00"],["دمشق","قاسيون مول","11:00","22:00"],["دمشق","ج . خوري","10:00","22:00"],["دمشق","جديدة . ع","10:00","22:00"],["دمشق","دمر","10:00","23:00"],["دمشق","بلدية","10:00","22:00"]];
+const tf=v=>{const p=String(v).split(':');return((+p[0]||0)*60+(+p[1]||0))/1440};
+let SCH=DEF.map(([c,n,o,cl])=>({c,n,o,cl,k:nm(n)})),MAP={};
+try{const sv=JSON.parse(localStorage.getItem('sch2')||'null');if(sv&&sv.length===SCH.length)sv.forEach((x,i)=>{SCH[i].o=x[0];SCH[i].cl=x[1]});MAP=JSON.parse(localStorage.getItem('map2')||'{}')||{}}catch(e){}
+const persist=()=>{try{localStorage.setItem('sch2',JSON.stringify(SCH.map(s=>[s.o,s.cl])));localStorage.setItem('map2',JSON.stringify(MAP))}catch(e){}};
+const S={A:{files:[],legacy:[]},B:{files:[],legacy:[]}};
+const DRE=/(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{4})/;
+const pd=t=>{const m=DRE.exec(String(t||'').replace(/[٠-٩]/g,c=>c.charCodeAt(0)-1632));return m?{d:+m[1],m:+m[2],y:+m[3]}:null};
+const ser=(y,m,d)=>Date.UTC(y,m-1,d)/864e5+25569;
+const iso=s=>new Date(Math.round((s-25569)*864e5)).toISOString().slice(0,10);
+function lookup(name){
+  const k=nm(name);
+  if(MAP[k]!=null&&SCH[MAP[k]])return SCH[MAP[k]];
+  const e=SCH.find(s=>s.k===k);if(e)return e;
+  const c=SCH.filter(s=>s.k.length>=3&&k.length>=3&&(s.k.includes(k)||k.includes(s.k)));
+  return c.length===1?c[0]:null;
 }
+const hdr=(a,...names)=>a.findIndex(r=>r&&names.every(n=>r.some(c=>String(c).trim()===n)));
+function legacyRows(wb){
+  for(const n of wb.SheetNames.slice().sort((a,b)=>(b==='البيانات')-(a==='البيانات'))){
+    const a=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:null});
+    const hi=hdr(a,'الفرع','افتتاح فعلي');if(hi<0)continue;
+    const h=a[hi].map(c=>String(c==null?'':c).trim()),ix=k=>h.indexOf(k);
+    const C={d:ix('التاريخ'),c:ix('الدائرة'),b:ix('الفرع'),oo:ix('افتتاح رسمي'),oc:ix('اغلاق رسمي'),ao:ix('افتتاح فعلي'),ac:ix('اغلاق فعلي')};
+    if(C.d<0||C.oo<0||C.oc<0||C.ao<0||C.ac<0)continue;
+    const rs=a.slice(hi+1).filter(r=>r&&r[C.b]&&typeof r[C.d]==='number').map(r=>({d:r[C.d],c:C.c>=0?String(r[C.c]||'').trim():'',b:String(r[C.b]).trim(),oo:r[C.oo],oc:r[C.oc],ao:r[C.ao],ac:r[C.ac]}));
+    if(rs.length)return rs;
+  }
+  return null;
+}
+function dailyRows(wb,fname){
+  for(const n of wb.SheetNames){
+    const a=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:null});
+    const hi=hdr(a,'الفرع','افتتاح','اغلاق');if(hi<0)continue;
+    const h=a[hi].map(c=>String(c==null?'':c).trim()),ic=h.indexOf('الدائرة'),ib=h.indexOf('الفرع'),io=h.indexOf('افتتاح'),ie=h.indexOf('اغلاق'),inn=h.indexOf('ملاحظات');
+    const tt=pd(a.slice(0,hi).flat().find(c=>typeof c==='string'&&pd(c))),ft=pd(fname),dd=ft||tt;
+    const val=v=>{if(v==null)return null;if(typeof v==='number')return v;const x=String(v).trim();return!x||/^[-–—_.\s]+$/.test(x)?null:x};
+    let circ='';const rows=[];
+    for(const r of a.slice(hi+1)){
+      if(!r)continue;
+      if(ic>=0&&r[ic]!=null&&String(r[ic]).trim())circ=String(r[ic]).trim();
+      if(r[ib]==null||!String(r[ib]).trim())continue;
+      rows.push({c:circ,b:String(r[ib]).trim(),ao:val(r[io]),ac:val(r[ie]),note:inn>=0&&r[inn]?String(r[inn]):''});
+    }
+    if(!rows.length)continue;
+    return{name:fname,rows,h:JSON.stringify(rows.map(r=>[r.b,r.ao,r.ac])),d:dd?ser(dd.y,dd.m,dd.d):null,td:tt&&ft&&(tt.d!==ft.d||tt.m!==ft.m||tt.y!==ft.y)?`${tt.d}/${tt.m}/${tt.y}`:''};
+  }
+  return null;
+}
+async function ingest(files,k){
+  const ms=[];let ok=0;
+  for(const f of files){
+    if(/\.pdf$/i.test(f.name)){ms.push('PDF غير مدعوم بعد: '+f.name);continue}
+    try{
+      const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}),lg=legacyRows(wb);
+      if(lg){S[k].legacy=lg;ok++;continue}
+      const dr=dailyRows(wb,f.name);
+      if(!dr){ms.push('ما عرفت شكل الملف: '+f.name);continue}
+      if(S[k].files.some(x=>x.h===dr.h)){ms.push('تجاهلت ملف مكرر: '+f.name);continue}
+      S[k].files.push(dr);ok++;
+    }catch(e){ms.push('تعذّر قراءة '+f.name)}
+  }
+  sortF();refresh();
+  msg((ok?`تمت إضافة ${ok} ملف. `:'')+ms.join(' • '),!ok&&ms.length>0);
+}
+const sortF=()=>['A','B'].forEach(k=>S[k].files.sort((a,b)=>(a.d==null?1e9:a.d)-(b.d==null?1e9:b.d)));
+function build(k){
+  const m=new Map();
+  S[k].files.forEach(f=>{if(f.d==null)return;f.rows.forEach(r=>{const s=lookup(r.b);m.set(f.d+'|'+nm(s?s.n:r.b),{d:f.d,c:s?s.c:r.c,b:s?s.n:r.b,oo:s?tf(s.o):null,oc:s?tf(s.cl):null,ao:r.ao,ac:r.ac,note:r.note})})});
+  return S[k].legacy.concat([...m.values()]);
+}
+function refresh(skipSch){
+  raw=build('A');const bb=build('B');
+  ds.B=bb.length?{name:'الفترة السابقة',rows:bb}:null;
+  renderFiles();renderUnm();if(!skipSch)renderSch();
+  $('#upt').textContent=raw.length?'إضافة ملفات للفترة الحالية':'ارفع تقارير الأيام (عدة ملفات) أو ملف الشهر الجاهز';
+  $('#upt2').textContent=bb.length?'إضافة ملفات للمقارنة':'+ ملفات للمقارنة (اختياري، فترة سابقة)';
+  if(!raw.length){$('#res').hidden=true;return}
+  const cur=$('#circ').value,cs=[...new Set(raw.map(r=>r.c).filter(Boolean))];
+  $('#circ').innerHTML='<option value="">كل الدوائر</option>'+cs.map(c=>`<option${c===cur?' selected':''}>${esc(c)}</option>`).join('');
+  $('#res').hidden=false;render();
+}
+function renderFiles(){
+  const out=[];
+  for(const k of['A','B']){
+    const fs=S[k].files;if(!fs.length)continue;
+    out.push(`<div class="hint" style="margin:8px 0 2px">${k==='A'?'الفترة الحالية':'فترة المقارنة'} — ${fs.length} يوم</div>`);
+    const seen={};
+    fs.forEach((f,i)=>{
+      const dup=f.d!=null&&seen[f.d];seen[f.d]=1;
+      const w=[f.d==null?'حدد التاريخ':'',f.td?'العنوان داخل الملف: '+f.td:'',dup?'نفس تاريخ ملف آخر (يُعتمد الأحدث)':''].filter(Boolean).join(' • ');
+      out.push(`<div class="fi"><span class="fn">${esc(f.name)}</span><input type="date" data-k="${k}" data-i="${i}" value="${f.d==null?'':iso(f.d)}"><button data-x="${k}:${i}" aria-label="حذف">✕</button>${w?`<small class="warn">⚠ ${esc(w)}</small>`:''}</div>`);
+    });
+  }
+  $('#fl').innerHTML=out.join('');
+}
+function renderUnm(){
+  const u=new Map();
+  for(const k of['A','B'])S[k].files.forEach(f=>f.rows.forEach(r=>{if(!lookup(r.b))u.set(nm(r.b),r.b)}));
+  $('#unm').innerHTML=u.size?'<div class="ins">فروع غير مربوطة بجدول الأوقات الرسمية، اختر مقابلها:'+[...u].map(([k,n])=>`<div class="fi"><span class="fn">${esc(n)}</span><select data-m="${esc(k)}"><option value="">—</option>${SCH.map((s,i)=>`<option value="${i}">${esc(s.n)}</option>`).join('')}</select></div>`).join('')+'</div>':'';
+}
+function renderSch(){
+  $('#t-s').innerHTML=tbl(['الفرع','افتتاح','إغلاق'],SCH.map((s,i)=>`<tr><td>${esc(s.n)}<small>${esc(s.c)}</small></td><td><input type="time" data-s="${i}:o" value="${s.o}"></td><td><input type="time" data-s="${i}:cl" value="${s.cl}"></td></tr>`))+'<p class="hint" style="padding:0 12px">التعديلات بتنحفظ على جهازك وبتنطبق على كل الأيام.</p><div class="dl"><button id="rs">إعادة الأوقات الأصلية</button></div><div style="height:12px"></div>';
+}
+['file','file2'].forEach(id=>$('#'+id).addEventListener('change',e=>{const fs=[...e.target.files];e.target.value='';if(fs.length)ingest(fs,id==='file2'?'B':'A')}));
+$('#fl').addEventListener('change',e=>{const t=e.target;if(t.type!=='date')return;const f=S[t.dataset.k].files[+t.dataset.i];if(!f)return;const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(t.value);f.d=m?ser(+m[1],+m[2],+m[3]):null;f.td='';sortF();refresh()});
+$('#fl').addEventListener('click',e=>{const x=e.target.dataset.x;if(!x)return;const p=x.split(':');S[p[0]].files.splice(+p[1],1);refresh()});
+$('#unm').addEventListener('change',e=>{const k=e.target.dataset.m;if(!k||e.target.value==='')return;MAP[k]=+e.target.value;persist();refresh()});
+$('#t-s').addEventListener('change',e=>{const d=e.target.dataset.s;if(!d||!e.target.value)return;const p=d.split(':');SCH[+p[0]][p[1]]=e.target.value;persist();refresh(true)});
+$('#t-s').addEventListener('click',e=>{if(e.target.id==='rs'){SCH.forEach((s,i)=>{s.o=DEF[i][2];s.cl=DEF[i][3]});persist();refresh()}});
 
 function calc(src){
   const tol=+$('#tol').value||0, exF=$('#fri').value==='1', sus=(+$('#sus').value||0)/24;
@@ -183,7 +268,7 @@ function tbl(h,b){return `<table><thead><tr>${h.map(x=>`<th>${x}</th>`).join('')
 $('#tabs').addEventListener('click',e=>{
   const t=e.target.dataset.t; if(!t) return;
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b===e.target));
-  ['b','d','v','c','r'].forEach(k=>$('#t-'+k).hidden=k!==t);
+  ['b','d','v','c','r','s'].forEach(k=>$('#t-'+k).hidden=k!==t);
 });
 
 function sum(r){const T=agg(r,()=>1)[0]||{oo:0,ol:0,co:0,ce:0,v:0};return{...T,po:pc(T.oo,T.oo+T.ol),pcx:pc(T.co,T.co+T.ce),pt:pc(T.oo+T.co,T.oo+T.ol+T.co+T.ce)}}
